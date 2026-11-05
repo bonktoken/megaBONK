@@ -1,6 +1,8 @@
 import dotenv from "dotenv";
 dotenv.config();
 import { HardhatUserConfig } from "hardhat/types";
+import { subtask } from "hardhat/config";
+import { TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD } from "hardhat/builtin-tasks/task-names";
 import "@nomiclabs/hardhat-waffle";
 import "hardhat-typechain";
 import "@openzeppelin/hardhat-upgrades";
@@ -16,12 +18,43 @@ const needsProvider =
     process.env.npm_config_argv.includes("ropsten") ||
     process.env.npm_config_argv.includes("mainnet"));
 
-if ((!privKey || !providerRopsten) && needsProvider) {
-  console.error("Please set a private key and provider.");
-  process.exit(0);
+if (needsProvider && (!privKey || !providerRopsten)) {
+  throw new Error("Please set PRIVATE_KEY and PROVIDER_ROPSTEN for ropsten deployments.");
 }
 
-const privKeyExists = privKey as string;
+const networks: Record<string, any> = {
+  hardhat: {},
+};
+
+if (providerRopsten) {
+  networks.ropsten = {
+    url: providerRopsten,
+    accounts: privKey ? [privKey] : [],
+  };
+}
+
+if (providerMainnet) {
+  networks.mainnet = {
+    url: providerMainnet,
+    accounts: privKey ? [privKey] : [],
+  };
+}
+
+subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD).setAction(
+  async ({ solcVersion }: { solcVersion: string }) => {
+    const version = solcVersion.replace(/^[^\d]*/, "");
+    const compilerPackage = version.startsWith("0.5.")
+      ? "solc-0-5-16"
+      : "solc-0-7-5";
+
+    return {
+      compilerPath: require.resolve(`${compilerPackage}/soljson.js`),
+      isSolcJs: true,
+      version,
+      longVersion: `solc ${version}`,
+    };
+  }
+);
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -30,32 +63,15 @@ const config: HardhatUserConfig = {
         version: "0.7.5",
       },
       {
-        version: "0.5.16"
+        version: "0.5.16",
       },
     ],
   },
   defaultNetwork: "hardhat",
-  networks: {
-    hardhat: {
-    },
-    ropsten: {
-      url: providerRopsten,
-      accounts: [privKeyExists]
-    },
-    mainnet: {
-      url: providerMainnet,
-      accounts: [privKeyExists]
-    }
-  },
+  networks,
   etherscan: {
-    apiKey: process.env.ETHERSCAN_API_KEY
-  }
-  // defaultNetwork: "hardhat",
-  // networks: {
-  //   localhost: {
-  //     chainId: 1337,
-  //   },
-  // },
+    apiKey: process.env.ETHERSCAN_API_KEY,
+  },
 };
 
 export default config;
